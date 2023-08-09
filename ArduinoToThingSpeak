@@ -1,0 +1,146 @@
+#include <SoftwareSerial.h>
+#define SSID "MyWifi"
+#define PASS "MyWifiPassword"
+#define IP "184.106.153.149" // thingspeak.com
+String GET = "GET /update?key= >>> API Key HERE <<<";  // It should look like this: "GET /update?key=XXXX1234563X"
+
+SoftwareSerial wifiPort(2, 3); 
+
+// Temperature sensors: 
+#include <dht.h>
+dht DHT;
+//Constants
+#define DHT22_PIN 5     // DHT 22  (AM2302) - what pin we're connected to
+#define DHT22_PIN2 6
+
+const int sensorPinTemp = A5;
+
+
+//Variables
+float humDHT1;  //Stores humidity value
+float tempDHT1; //Stores temperature value
+float humDHT2;  //Stores humidity value
+float tempDHT2; //Stores temperature value
+
+// -------------------------------------------------------------------------------------------------------
+//Setup:
+// -------------------------------------------------------------------------------------------------------
+void setup()  
+{
+  Serial.begin(115200);
+  while (!Serial) {
+  }
+  
+  wifiPort.begin(115200);
+   connectToWiFi();
+}
+
+// -------------------------------------------------------------------------------------------------------
+//Functions:
+// -------------------------------------------------------------------------------------------------------
+boolean connectToWiFi(){
+  Serial.println("AT+CWMODE=3");
+  delay(2000);
+  String cmd="AT+CWJAP=\"";
+  cmd+=SSID;
+  cmd+="\",\"";
+  cmd+=PASS;
+  cmd+="\"";
+  Serial.println("Conectando a wifi usando:");
+  Serial.println(cmd);
+  wifiPort.println(cmd);  
+  delay(5000);
+  if(wifiPort.find("OK")){
+    Serial.print("Connected, IP address:  ");
+    delay(2000);
+    wifiPort.println("AT+CIFSR");
+  delay(2000);
+   Serial.println("All good!");
+  wifiPort.println("AT+CIPMUX=1");
+    return true;
+  }else{
+    Serial.println("Not good!");
+    return false;
+  }
+}
+
+void sendTelemetry(float tempDHT1, float humDHT1, float tempTMP, float tempDHT2, float humDHT2){
+  String cmd = "AT+CIPSTART=4,\"TCP\",\"";
+  //AT+CIPSTART=4,"TCP","bing.com",80 
+  cmd += IP;
+  cmd += "\",80";
+  Serial.println(cmd);
+  wifiPort.println(cmd);
+  delay(2000);
+  if(wifiPort.find("Error")){
+    Serial.println("Not good!");
+    return;
+  }
+  
+  cmd = GET + "&field1="+humDHT1+"&field2="+tempDHT1+"&field3="+tempTMP+"&field4="+humDHT2+"&field5="+tempDHT2;
+  cmd += "\r\n";
+  wifiPort.print("AT+CIPSEND=4,");
+  wifiPort.println(cmd.length());
+  delay(3000);
+  if(wifiPort.find(">")){
+    Serial.println("sending command: ");
+    Serial.println(cmd);
+    wifiPort.print(cmd);
+  }else{
+   Serial.println("closing");
+  wifiPort.println("AT+CIPCLOSE");
+  }
+}
+
+
+// -------------------------------------------------------------------------------------------------------
+//Loop:
+// -------------------------------------------------------------------------------------------------------
+void loop() 
+{
+  //Read Sensor DHT22-1:
+  int chk = DHT.read22(DHT22_PIN);
+  //Read data and store it to variables hum and temp
+  humDHT1 = DHT.humidity;
+  tempDHT1= DHT.temperature;
+  //Print temp and humidity values to serial monitor
+  Serial.print("HumidityDHT1: ");
+  Serial.print(humDHT1);
+  Serial.print(" %, TempDHT1: ");
+  Serial.print(tempDHT1);
+  Serial.print(" Celsius");
+
+  //Read Sensor TMP:
+  int sensorVal = analogRead(sensorPinTemp);
+  float voltageTemp = (sensorVal / 1024.0) * 5.0 ;
+  float tempTMP = (voltageTemp - 0.5) * 100 ;
+  Serial.print(" | TMP: ");
+  Serial.print(tempTMP);
+  Serial.print(" Celsius");
+
+
+  //Read Sensor DHT22-2:
+  int chk2 = DHT.read22(DHT22_PIN2);
+  //Read data and store it to variables hum and temp
+  humDHT2 = DHT.humidity;
+  tempDHT2= DHT.temperature;
+  //Print temp and humidity values to serial monitor
+  Serial.print(" | Humidity 2: ");
+  Serial.print(humDHT2);
+  Serial.print(" %, Temp 2: ");
+  Serial.print(tempDHT2);
+  Serial.println(" Celsius");
+
+  //Send data:
+  wifiPort.listen();
+  if (wifiPort.available() ) {
+    Serial.write(wifiPort.read());
+  }
+  if (Serial.available() ){
+    wifiPort.write(Serial.read());
+  }
+  delay(10);
+
+  sendTelemetry(tempDHT1,humDHT1,tempTMP,tempDHT2,humDHT2);
+  delay(30000);
+}
